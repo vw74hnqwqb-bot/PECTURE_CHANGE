@@ -1,14 +1,330 @@
-<!doctype html>
-<html lang="ko" class="h-full">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ASPECT STUDIO | 정밀 이미지 편집 도구</title>
-    <meta name="description" content="설치 없이 브라우저에서 바로 사용하는 전문적인 이미지 크기 조절 및 편집 도구" />
-  </head>
-  <body class="h-full antialiased">
-    <div id="root" class="h-full"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
-</html>
+    
+    <!-- 폰트 및 스타일 CDN -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS v4 (CDN) -->
+    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+    
+    <!-- React & Babel (JSX를 브라우저에서 실행하기 위함) -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Motion & Lucide Icons -->
+    <script src="https://unpkg.com/framer-motion@11/dist/framer-motion.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
 
+    <style type="text/tailwindcss">
+        @theme {
+            --font-sans: "Pretendard", ui-sans-serif, system-ui, sans-serif;
+            --font-serif: "Gowun Batang", ui-serif, Georgia, serif;
+            
+            --color-paper: #F7F5F2;
+            --color-ink: #121212;
+            --color-canvas: #EBE9E6;
+            --color-neutral-heavy: #D6D3CF;
+        }
+
+        @layer base {
+            body {
+                @apply font-sans bg-paper text-ink antialiased;
+            }
+            input[type="number"]::-webkit-inner-spin-button,
+            input[type="number"]::-webkit-outer-spin-button {
+                -webkit-appearance: none;
+                margin: 0;
+            }
+        }
+    </style>
+</head>
+<body class="h-full">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        /**
+         * @description ASPECT STUDIO - 단일 파일 정적 웹 애플리케이션
+         * @purpose 교육용 이미지 크기 조절 및 편집 도구
+         */
+        const { useState, useRef, useEffect, useCallback } = React;
+        const motion = (window.Motion && window.Motion.motion) || (window.framerMotion && window.framerMotion.motion) || (({ children, ...props }) => <div {...props}>{children}</div>);
+        const AnimatePresence = (window.Motion && window.Motion.AnimatePresence) || (window.framerMotion && window.framerMotion.AnimatePresence) || (({ children }) => children);
+
+        // 아이콘 컴포넌트 도우미
+        const Icon = ({ name, size = 16, className = "" }) => {
+            const iconRef = useRef(null);
+            useEffect(() => {
+                if (iconRef.current) {
+                    lucide.createIcons({
+                        targets: [iconRef.current]
+                    });
+                }
+            }, [name, size]);
+            return <i data-lucide={name} style={{ width: size, height: size }} className={className} ref={iconRef}></i>;
+        };
+
+        function App() {
+            const [image, setImage] = useState(null);
+            const [targetWidth, setTargetWidth] = useState(0);
+            const [targetHeight, setTargetHeight] = useState(0);
+            const [aspectRatio, setAspectRatio] = useState(true);
+            const [isProcessing, setIsProcessing] = useState(false);
+            const [activePreset, setActivePreset] = useState('Custom');
+            
+            const fileInputRef = useRef(null);
+
+            // 파일 처리 로직 (보안을 위해 로컬 브라우저 내에서만 실행)
+            const processFile = (file) => {
+                if (file && file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        const img = new Image();
+                        img.onload = () => {
+                            setImage({
+                                src: event.target.result,
+                                name: file.name,
+                                type: file.type,
+                                width: img.width,
+                                height: img.height,
+                                size: file.size
+                            });
+                            setTargetWidth(img.width);
+                            setTargetHeight(img.height);
+                            setActivePreset('Custom');
+                        };
+                        img.src = event.target.result;
+                    };
+                    reader.readAsDataURL(file);
+                }
+            };
+
+            const handleFileUpload = (e) => {
+                const file = e.target.files?.[0];
+                if (file) processFile(file);
+            };
+
+            const handleWidthChange = (val) => {
+                setTargetWidth(val);
+                if (aspectRatio && image) {
+                    setTargetHeight(Math.round(val * (image.height / image.width)));
+                }
+                setActivePreset('Custom');
+            };
+
+            const handleHeightChange = (val) => {
+                setTargetHeight(val);
+                if (aspectRatio && image) {
+                    setTargetWidth(Math.round(val * (image.width / image.height)));
+                }
+                setActivePreset('Custom');
+            };
+
+            const applyPreset = (ratio) => {
+                if (!image) return;
+                setActivePreset(ratio);
+                if (ratio === '16:9') {
+                    setTargetHeight(Math.round(targetWidth * (9 / 16)));
+                } else if (ratio === '4:3') {
+                    setTargetHeight(Math.round(targetWidth * (3 / 4)));
+                } else if (ratio === '1:1') {
+                    setTargetHeight(targetWidth);
+                }
+            };
+
+            const downloadImage = async () => {
+                if (!image) return;
+                setIsProcessing(true);
+                
+                const canvas = document.createElement('canvas');
+                canvas.width = targetWidth;
+                canvas.height = targetHeight;
+                const ctx = canvas.getContext('2d');
+                
+                const img = new Image();
+                img.src = image.src;
+                img.onload = () => {
+                    ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+                    const link = document.createElement('a');
+                    link.download = `aspect-${image.name}`;
+                    link.href = canvas.toDataURL(image.type);
+                    link.click();
+                    setIsProcessing(false);
+                };
+            };
+
+            const formatSize = (bytes) => {
+                if (bytes === 0) return '0 B';
+                const k = 1024;
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + ['B', 'KB', 'MB'][i];
+            };
+
+            return (
+                <div className="flex flex-col min-h-screen bg-paper text-ink selection:bg-ink selection:text-paper overflow-x-hidden">
+                    {/* 상단 헤더 */}
+                    <header className="flex flex-col md:flex-row justify-between items-start md:items-end p-6 md:p-10 border-b border-ink/10 gap-6">
+                        <div>
+                            <h1 className="text-4xl md:text-6xl font-serif tracking-tighter leading-none italic uppercase">Aspect Studio</h1>
+                            <p className="text-[10px] uppercase tracking-[0.2em] mt-4 opacity-60 font-bold">이미지 변환 및 정밀 보정 유닛 | 정적 웹 에디션</p>
+                        </div>
+                        <div className="flex gap-8 md:gap-12 text-[11px] uppercase tracking-widest font-bold font-sans">
+                            <button className="border-b border-ink">작업공간</button>
+                            <button className="opacity-40 hover:opacity-100">컬렉션</button>
+                            <button className="opacity-40 hover:opacity-100">아카이브</button>
+                        </div>
+                    </header>
+
+                    {/* 메인 인터페이스 */}
+                    <main className="flex-1 flex flex-col lg:flex-row overflow-hidden min-h-0">
+                        {/* 설정 사이드바 */}
+                        <aside className="w-full lg:w-96 border-b lg:border-b-0 lg:border-r border-ink/10 p-6 md:p-10 flex flex-col gap-10 overflow-y-auto">
+                            <section>
+                                <span className="text-[10px] font-serif italic mb-6 block opacity-50">01 / 주 규격 (Dimensions)</span>
+                                <div className="grid grid-cols-2 lg:grid-cols-1 gap-8">
+                                    <div className="group">
+                                        <label className="text-[9px] uppercase tracking-widest mb-2 block font-bold opacity-70">너비 (Width px)</label>
+                                        <input 
+                                            type="number"
+                                            value={targetWidth || ''}
+                                            onChange={(e) => handleWidthChange(parseInt(e.target.value) || 0)}
+                                            className="w-full bg-transparent border-b border-ink/20 focus:border-ink py-2 text-3xl font-serif outline-none transition-all"
+                                        />
+                                    </div>
+                                    <div className="group">
+                                        <label className="text-[9px] uppercase tracking-widest mb-2 block font-bold opacity-70">높이 (Height px)</label>
+                                        <input 
+                                            type="number"
+                                            value={targetHeight || ''}
+                                            onChange={(e) => handleHeightChange(parseInt(e.target.value) || 0)}
+                                            className="w-full bg-transparent border-b border-ink/20 focus:border-ink py-2 text-3xl font-serif outline-none transition-all"
+                                        />
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section>
+                                <span className="text-[10px] font-serif italic mb-6 block opacity-50">02 / 비율 설정 (Aspect Ratio)</span>
+                                <div className="flex flex-wrap gap-2">
+                                    {['16:9', '4:3', '1:1', 'Custom'].map((ratio) => (
+                                        <button 
+                                            key={ratio}
+                                            onClick={() => ratio === 'Custom' ? setActivePreset('Custom') : applyPreset(ratio)}
+                                            className={`px-4 py-2 border border-ink rounded-full text-[10px] uppercase font-bold transition-all ${
+                                                activePreset === ratio ? 'bg-ink text-paper' : 'bg-transparent text-ink hover:bg-ink/5'
+                                            }`}
+                                        >
+                                            {ratio === 'Custom' ? '자유 비율' : ratio}
+                                        </button>
+                                    ))}
+                                </div>
+                                <button 
+                                    onClick={() => setAspectRatio(!aspectRatio)}
+                                    className="mt-6 flex items-center gap-3 group"
+                                >
+                                    <div className={`w-4 h-4 border border-ink flex items-center justify-center transition-colors ${aspectRatio ? 'bg-ink' : ''}`}>
+                                        {aspectRatio && <div className="w-1.5 h-1.5 bg-paper rounded-full" />}
+                                    </div>
+                                    <span className="text-[10px] uppercase tracking-widest font-bold opacity-60 group-hover:opacity-100 italic transition-opacity">Lock Aspect Ratio</span>
+                                </button>
+                            </section>
+
+                            <div className="mt-auto pt-10 border-t border-ink/5 hidden lg:block">
+                                <button 
+                                    onClick={downloadImage}
+                                    disabled={!image || isProcessing}
+                                    className="w-full py-6 bg-ink text-paper uppercase text-xs tracking-[0.3em] font-bold hover:bg-ink/90 active:scale-[0.98] transition-all disabled:opacity-20"
+                                >
+                                    {isProcessing ? '처리 중...' : '이미지 내보내기'}
+                                </button>
+                            </div>
+                        </aside>
+
+                        {/* 작업 캔버스 */}
+                        <section className="flex-1 bg-canvas p-4 md:p-12 relative flex items-center justify-center min-h-[400px]">
+                            {/* 안내 정보 오버레이 */}
+                            <div className="absolute top-8 left-8 hidden md:flex items-center gap-3">
+                                <div className="w-1.5 h-1.5 bg-ink rounded-full"></div>
+                                <span className="text-[10px] uppercase tracking-widest opacity-40 font-serif italic">
+                                    Layer: {image ? image.name : 'Ready for asset input'}
+                                </span>
+                            </div>
+
+                            <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept="image/*" className="hidden" />
+
+                            {!image ? (
+                                <motion.div 
+                                    initial={{ opacity: 0, y: 30 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    onClick={() => fileInputRef.current.click()}
+                                    className="w-full max-w-xl aspect-video bg-neutral-heavy border border-ink/5 shadow-[0_50px_100px_-20px_rgba(0,0,0,0.15)] flex flex-col items-center justify-center cursor-pointer group p-8 text-center"
+                                >
+                                    <div className="text-[10px] font-serif italic mb-4 opacity-50 uppercase tracking-widest">Workspace Empty</div>
+                                    <h2 className="text-3xl md:text-4xl font-serif italic tracking-tighter mb-8 leading-tight">편집할 이미지를 <br/> 이곳에 올려두세요</h2>
+                                    <div className="px-6 py-2 border border-ink rounded-full text-[10px] uppercase font-bold tracking-widest hover:bg-ink hover:text-paper transition-all">
+                                        에셋 불러오기
+                                    </div>
+                                </motion.div>
+                            ) : (
+                                <div className="relative group max-w-full max-h-full p-4 flex items-center justify-center">
+                                    <motion.div 
+                                        initial={{ opacity: 0, scale: 0.95 }}
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        className="relative bg-neutral-heavy border border-ink/5 shadow-2xl overflow-hidden"
+                                    >
+                                        <img src={image.src} className="max-w-full max-h-[60vh] object-contain mix-blend-multiply opacity-90" />
+                                        
+                                        {/* 가이드 라인 */}
+                                        <div className="absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-ink -translate-x-1/2 -translate-y-1/2"></div>
+                                        <div className="absolute top-0 right-0 w-3 h-3 border-t-2 border-r-2 border-ink translate-x-1/2 -translate-y-1/2"></div>
+                                        <div className="absolute bottom-0 left-0 w-3 h-3 border-b-2 border-l-2 border-ink -translate-x-1/2 translate-y-1/2"></div>
+                                        <div className="absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 border-ink translate-x-1/2 translate-y-1/2"></div>
+                                    </motion.div>
+                                    
+                                    <div className="absolute -bottom-10 opacity-0 md:group-hover:opacity-100 transition-opacity">
+                                        <span className="bg-ink text-paper text-[10px] px-3 py-1 font-mono tracking-widest uppercase">
+                                            Scale Mode: {targetWidth} &times; {targetHeight}
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
+                        </section>
+                    </main>
+
+                    {/* 모바일 하단 액션바 */}
+                    <div className="lg:hidden p-6 border-t border-ink/10 bg-white sticky bottom-0">
+                        <button 
+                            onClick={downloadImage}
+                            disabled={!image || isProcessing}
+                            className="w-full py-5 bg-ink text-paper uppercase text-[11px] tracking-[0.4em] font-bold shadow-xl active:scale-95 transition-all disabled:opacity-20"
+                        >
+                            {isProcessing ? '처리 중...' : '이미지 내보내기'}
+                        </button>
+                    </div>
+
+                    {/* 푸터 */}
+                    <footer className="p-6 md:px-10 md:py-6 bg-ink text-paper text-[8px] md:text-[9px] uppercase tracking-[0.3em] font-bold flex flex-col md:flex-row justify-between items-center gap-6">
+                        <div className="flex gap-10 opacity-60">
+                            <span className="flex items-center gap-2 italic">
+                                <span className="w-1 h-1 bg-paper rounded-full animate-pulse"></span>
+                                CLOUD: STANDALONE MODE
+                            </span>
+                            <span>ORIGIN: {image ? formatSize(image.size) : '0 KB'}</span>
+                            <span className="hidden sm:block">SCALE: {image ? Math.round((targetWidth/image.width)*100) : 0}%</span>
+                        </div>
+                        <div className="opacity-40">&copy; 2026 ASPECT STUDIO / STATIC WEB EDITION</div>
+                    </footer>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
